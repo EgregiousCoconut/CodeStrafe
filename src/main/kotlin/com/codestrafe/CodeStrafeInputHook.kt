@@ -4,43 +4,26 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.EditorModificationUtil
+import com.intellij.openapi.editor.ScrollType
 import com.intellij.openapi.editor.actionSystem.TypedAction
 import com.intellij.openapi.editor.actionSystem.TypedActionHandler
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.max
 import kotlin.math.min
 
-/**
- * CodeStrafeInputHook
- *
- * IMPORTANT DESIGN CHANGE:
- * - We install the TypedAction handler ONCE and never uninstall it.
- * - We avoid delegating to other TypedActionHandlers (prevents recursion/StackOverflow).
- * - When we want "normal typing", we insert text directly via EditorModificationUtil.
- *
- * This is extremely stable on macOS and avoids handler-chain recursion.
- */
 object CodeStrafeInputHook {
 
     private val log = Logger.getInstance(CodeStrafeInputHook::class.java)
     private val installed = AtomicBoolean(false)
 
-    /**
-     * Install once. Safe to call repeatedly.
-     */
     fun ensureInstalled() {
         runOnEdt {
             if (installed.get()) return@runOnEdt
-
-            val typedAction = TypedAction.getInstance()
-            typedAction.setupHandler(CodeStrafeTypedHandler())
+            TypedAction.getInstance().setupHandler(CodeStrafeTypedHandler())
             installed.set(true)
-
-            log.info("CodeStrafeInputHook installed (permanent)")
+            log.info("CodeStrafeInputHook installed")
         }
     }
-
-    fun isInstalled(): Boolean = installed.get()
 
     private fun runOnEdt(block: () -> Unit) {
         val app = ApplicationManager.getApplication()
@@ -54,79 +37,60 @@ object CodeStrafeInputHook {
             charTyped: Char,
             dataContext: com.intellij.openapi.actionSystem.DataContext
         ) {
-            // If Navigation Mode is OFF, behave like normal typing (WITHOUT delegating).
+            // Normal typing when Nav Mode is off
             if (!CodeStrafeState.isNavigationModeEnabled()) {
                 typeNormally(editor, charTyped)
                 return
             }
 
-            // Navigation Mode ON: intercept only our movement keys.
-            CodeStrafeState.updateEditorContext(editor)
-
+            // In Nav Mode: intercept movement keys, including SHIFT variants (uppercase)
             val handled = when (charTyped) {
+                'w', 'W' -> { moveLines(editor, if (charTyped == 'W') -5 else -1); true }
+                's', 'S' -> { moveLines(editor, if (charTyped == 'S') +5 else +1); true }
 
-                // ===== BASE LAYER =====
-                'w' -> { moveLines(editor, -1); true }
-                's' -> { moveLines(editor, +1); true }
-                'a' -> { moveWord(editor, -1); true }
-                'd' -> { moveWord(editor, +1); true }
+                // A/D are horizontal navigation
+                // lowercase = word, uppercase (shift) = faster word movement
+                'a', 'A' -> { moveWord(editor, direction = -1, steps = if (charTyped == 'A') 5 else 1); true }
+                'd', 'D' -> { moveWord(editor, direction = +1, steps = if (charTyped == 'D') 5 else 1); true }
 
-                'q' -> { panLines(editor, -5); true }
-                'e' -> { panLines(editor, +5); true }
-
-                ' ' -> { moveLines(editor, 15); centerCaret(editor); true }
-
-                // ===== SHIFT LAYER (macOS-friendly) =====
-                'W' -> { moveLines(editor, -10); true }
-                'S' -> { moveLines(editor, +10); true }
-                'A' -> { moveChars(editor, -1); true }
-                'D' -> { moveChars(editor, +1); true }
-
-                'Q' -> { panLines(editor, -20); true }
-                'E' -> { panLines(editor, +20); true }
+                // Error targeting
+                'n', 'N' -> { CodeStrafeIdeActions.gotoNextError(dataContext); true }
+                'p', 'P' -> { CodeStrafeIdeActions.gotoPreviousError(dataContext); true }
 
                 else -> false
             }
 
             if (handled) {
                 CodeStrafeState.snapshotCaretPosition(editor)
+                CodeStrafeHighlightManager.updateForEditor(editor)
                 return
             }
 
-            // In nav mode, for any other character, type normally (without delegating).
+            // In Nav Mode, allow other keys to type (your design choice).
+            // If you want Nav Mode to block ALL typing, tell me and I’ll flip this behavior.
             typeNormally(editor, charTyped)
         }
 
         private fun typeNormally(editor: Editor, charTyped: Char) {
-            // Safest “normal typing” without invoking TypedAction handler chain.
-            EditorModificationUtil.insertStringAtCaret(
-                editor,
-                charTyped.toString(),
-                /* toProcessOverwriteMode = */ true,
-                /* toMoveCaret = */ true
-            )
+            EditorModificationUtil.insertStringAtCaret(editor, charTyped.toString(), true, true)
         }
 
-        private fun moveLines(editor: Editor, delta: Int) {
+        private fun moveLines(editor: Editor, deltaLines: Int) {
             val caret = editor.caretModel.currentCaret
             val doc = editor.document
             val current = caret.logicalPosition
-            val newLine = min(max(current.line + delta, 0), doc.lineCount - 1)
-            caret.moveToLogicalPosition(
-                com.intellij.openapi.editor.LogicalPosition(newLine, current.column)
-            )
-            editor.scrollingModel.scrollToCaret(com.intellij.openapi.editor.ScrollType.RELATIVE)
+            val newLine = (current.line + deltaLines).coerceIn(0, doc.lineCount - 1)
+            caret.moveToLogicalPosition(com.intellij.openapi.editor.LogicalPosition(newLine, current.column))
+            editor.scrollingModel.scrollToCaret(ScrollType.RELATIVE)
         }
 
-        private fun moveChars(editor: Editor, delta: Int) {
-            val caret = editor.caretModel.currentCaret
-            val doc = editor.document
-            val newOffset = min(max(caret.offset + delta, 0), doc.textLength)
-            caret.moveToOffset(newOffset)
-            editor.scrollingModel.scrollToCaret(com.intellij.openapi.editor.ScrollType.RELATIVE)
+        private fun moveWord(editor: Editor, direction: Int, steps: Int) {
+            repeat(max(1, steps)) {
+                moveOneWord(editor, direction)
+            }
         }
 
-        private fun moveWord(editor: Editor, direction: Int) {
+        private fun moveOneWord(editor: Editor, direction: Int) {
             val caret = editor.caretModel.currentCaret
             val doc = editor.document
             val text = doc.charsSequence
@@ -144,17 +108,7 @@ object CodeStrafeInputHook {
             }
 
             caret.moveToOffset(min(max(i, 0), doc.textLength))
-            editor.scrollingModel.scrollToCaret(com.intellij.openapi.editor.ScrollType.RELATIVE)
-        }
-
-        private fun panLines(editor: Editor, deltaLines: Int) {
-            val lineHeight = editor.lineHeight
-            val current = editor.scrollingModel.verticalScrollOffset
-            editor.scrollingModel.scrollVertically(current + deltaLines * lineHeight)
-        }
-
-        private fun centerCaret(editor: Editor) {
-            editor.scrollingModel.scrollToCaret(com.intellij.openapi.editor.ScrollType.CENTER)
+            editor.scrollingModel.scrollToCaret(ScrollType.RELATIVE)
         }
     }
 }
