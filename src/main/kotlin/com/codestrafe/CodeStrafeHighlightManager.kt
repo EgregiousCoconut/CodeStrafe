@@ -12,62 +12,129 @@ import kotlin.math.min
 object CodeStrafeHighlightManager {
 
     private val log = Logger.getInstance(CodeStrafeHighlightManager::class.java)
+
+    /**
+     * Current RangeHighlighter per Editor.
+     */
     private val highlighters = ConcurrentHashMap<Editor, RangeHighlighter>()
 
-    private val caretBg = JBColor(
+    /**
+     * Soft fallback highlight (subtle background).
+     */
+    private val fallbackBg = JBColor(
         Color(120, 200, 255, 70),
         Color(120, 200, 255, 40)
     )
 
-    private val selectionOutline = JBColor(
+    /**
+     * Normal target highlight (outline + light background).
+     */
+    private val targetBg = JBColor(
+        Color(120, 200, 255, 45),
+        Color(120, 200, 255, 25)
+    )
+    private val targetOutline = JBColor(
         Color(120, 200, 255, 230),
         Color(120, 200, 255, 200)
     )
 
+    /**
+     * PSI target highlight (red outline + light red background).
+     * This is intentionally different so we can visually confirm PSI is being used.
+     */
+    private val psiBg = JBColor(
+        Color(255, 80, 80, 55),
+        Color(255, 80, 80, 35)
+    )
+    private val psiOutline = JBColor(
+        Color(255, 80, 80, 230),
+        Color(255, 80, 80, 200)
+    )
+
+    /**
+     * Hard limits to avoid highlighting “the whole world”.
+     * If PSI returns a massive range, we reject it and fall back.
+     */
+    private const val MAX_HIGHLIGHT_CHARS = 600
+    private const val MAX_HIGHLIGHT_LINES = 20
+
+    /**
+     * Extra guard: if a PSI range covers “almost the whole file”, reject it.
+     * This catches cases where PSI degenerates into a single leaf element.
+     */
+    private const val WHOLE_FILE_FRACTION_REJECT = 0.85
+
+    /**
+     * Updates the highlight for a single editor.
+     *
+     * This function must be safe:
+     * - Never throw
+     * - Never leave you with “no highlight” while Nav Mode is on
+     */
     fun updateForEditor(editor: Editor) {
-        if (editor.isDisposed) {
-            removeForEditor(editor)
-            return
-        }
-
-        if (!CodeStrafeState.isNavigationModeEnabled()) {
-            removeForEditor(editor)
-            return
-        }
-
-        val len = editor.document.textLength
-        val (start, end, selectionStyle) = computeSmartRange(editor, len)
-
-        val existing = highlighters[editor]
-        if (existing != null) {
-            if (existing.startOffset == start && existing.endOffset == end) return
-            safeRemove(existing)
-            highlighters.remove(editor)
-        }
-
-        val (layer, attrs) = if (selectionStyle) {
-            (HighlighterLayer.SELECTION + 10) to TextAttributes().apply {
-                effectColor = selectionOutline
-                effectType = EffectType.BOXED
+        try {
+            if (editor.isDisposed) {
+                removeForEditor(editor)
+                return
             }
-        } else {
-            (HighlighterLayer.SELECTION - 1) to TextAttributes().apply {
-                backgroundColor = caretBg
+
+            if (!CodeStrafeState.isNavigationModeEnabled()) {
+                removeForEditor(editor)
+                return
             }
+
+            val len = editor.document.textLength
+            if (len <= 0) {
+                removeForEditor(editor)
+                return
+            }
+
+            val (rawStart, rawEnd, style) = computeSmartRange(editor, len)
+            val (start, end) = ensureValidRange(editor, rawStart, rawEnd)
+
+            val existing = highlighters[editor]
+            if (existing != null) {
+                if (existing.startOffset == start && existing.endOffset == end) return
+                safeRemove(existing)
+                highlighters.remove(editor)
+            }
+
+            val (layer, attrs) = when (style) {
+                HighlightStyle.PSI_TARGET -> {
+                    (HighlighterLayer.SELECTION + 11) to TextAttributes().apply {
+                        backgroundColor = psiBg
+                        effectColor = psiOutline
+                        effectType = EffectType.BOXED
+                    }
+                }
+                HighlightStyle.TARGET -> {
+                    (HighlighterLayer.SELECTION + 10) to TextAttributes().apply {
+                        backgroundColor = targetBg
+                        effectColor = targetOutline
+                        effectType = EffectType.BOXED
+                    }
+                }
+                HighlightStyle.FALLBACK -> {
+                    (HighlighterLayer.SELECTION - 1) to TextAttributes().apply {
+                        backgroundColor = fallbackBg
+                    }
+                }
+            }
+
+            val h = editor.markupModel.addRangeHighlighter(
+                start,
+                end,
+                layer,
+                attrs,
+                HighlighterTargetArea.EXACT_RANGE
+            )
+            h.isGreedyToLeft = false
+            h.isGreedyToRight = false
+
+            highlighters[editor] = h
+        } catch (t: Throwable) {
+            log.warn("CodeStrafe highlight update failed", t)
         }
-
-        val h = editor.markupModel.addRangeHighlighter(
-            start,
-            end,
-            layer,
-            attrs,
-            HighlighterTargetArea.EXACT_RANGE
-        )
-
-        h.isGreedyToLeft = false
-        h.isGreedyToRight = false
-
-        highlighters[editor] = h
     }
 
     fun removeForEditor(editor: Editor) {
@@ -84,52 +151,119 @@ object CodeStrafeHighlightManager {
     }
 
     /**
-     * "Nearest thing" targeting:
-     * 1) User selection (if start != end)
-     * 2) Nearest token on the current line (lock-on scan left/right from caret)
-     * 3) Nearest bracket/quote block around caret
-     * 4) Nearest non-whitespace run on the line
-     * 5) Single-char caret fallback
+     * Priority:
+     * 1) User selection
+     * 2) PSI-based target (if available AND reasonable)
+     * 3) Nearest token on the line
+     * 4) Bracket/quote block around caret
+     * 5) Nearest non-whitespace run on the line
+     * 6) 1-char fallback at caret
      */
-    private fun computeSmartRange(editor: Editor, len: Int): Triple<Int, Int, Boolean> {
+    private fun computeSmartRange(editor: Editor, len: Int): Triple<Int, Int, HighlightStyle> {
         val sm = editor.selectionModel
         val sStart = sm.selectionStart
         val sEnd = sm.selectionEnd
+
+        // 1) Manual selection always wins.
         if (sStart != sEnd) {
             val a = min(sStart, sEnd).coerceIn(0, len)
             val b = max(sStart, sEnd).coerceIn(0, len)
-            return Triple(a, b, true)
+            return Triple(a, b, HighlightStyle.TARGET)
         }
 
         val doc = editor.document
         val text = doc.charsSequence
-        val offset = editor.caretModel.offset.coerceIn(0, len)
+        val caret = editor.caretModel.offset.coerceIn(0, len)
 
-        val line = doc.getLineNumber(offset)
+        val line = doc.getLineNumber(caret)
         val lineStart = doc.getLineStartOffset(line)
         val lineEnd = doc.getLineEndOffset(line)
 
-        // 2) Nearest token (this is the main “lock-on” behavior)
-        val token = findNearestTokenRangeOnLine(text, offset, lineStart, lineEnd)
-        if (token != null) return Triple(token.first, token.second, true)
+        // 2) PSI targeting (optional; must be rejected if it returns a massive range)
+        try {
+            val psi = CodeStrafePsiTargeting.findPsiHighlightRange(editor)
+            if (psi != null) {
+                val a = psi.first.coerceIn(0, len)
+                val b = psi.second.coerceIn(0, len)
 
-        // 3) Bracket / quote block (useful when caret is near delimiters)
-        val block = findBracketRange(text, offset)
-        if (block != null) return Triple(block.first, block.second, true)
+                if (a < b && isReasonableRange(doc, len, a, b)) {
+                    log.warn("CodeStrafe: PSI ACCEPTED $a..$b (red highlight)")
+                    return Triple(a, b, HighlightStyle.PSI_TARGET)
+                } else {
+                    log.warn("CodeStrafe: PSI REJECTED $a..$b (falling back)")
+                }
+            } else {
+                log.warn("CodeStrafe: PSI returned null (falling back)")
+            }
+        } catch (t: Throwable) {
+            log.warn("CodeStrafe PSI targeting threw; falling back to text targeting", t)
+        }
 
-        // 4) Nearest non-whitespace run
-        val run = findNearestNonWhitespaceRunOnLine(text, offset, lineStart, lineEnd)
-        if (run != null) return Triple(run.first, run.second, false)
+        // 3) Token lock-on
+        val token = findNearestTokenRangeOnLine(text, caret, lineStart, lineEnd)
+        if (token != null) return Triple(token.first, token.second, HighlightStyle.TARGET)
 
-        // 5) Fallback: single character
-        val start = if (offset == len) max(len - 1, 0) else offset
+        // 4) Bracket / quote block
+        val block = findBracketRange(text, caret)
+        if (block != null) return Triple(block.first, block.second, HighlightStyle.TARGET)
+
+        // 5) Non-whitespace run
+        val run = findNearestNonWhitespaceRunOnLine(text, caret, lineStart, lineEnd)
+        if (run != null) return Triple(run.first, run.second, HighlightStyle.FALLBACK)
+
+        // 6) Final fallback: 1 char at caret
+        val start = if (caret == len) max(len - 1, 0) else caret
         val end = min(start + 1, len)
-        return Triple(start, end, false)
+        return Triple(start, end, HighlightStyle.FALLBACK)
     }
 
     /**
-     * Finds the nearest "word token" on the current line.
-     * Works even if caret is on whitespace or between characters.
+     * Reject “everything highlighted” cases.
+     */
+    private fun isReasonableRange(
+        doc: com.intellij.openapi.editor.Document,
+        docLen: Int,
+        start: Int,
+        end: Int
+    ): Boolean {
+        val charLen = end - start
+        if (charLen <= 0) return false
+
+        // Hard size caps
+        if (charLen > MAX_HIGHLIGHT_CHARS) return false
+
+        val startLine = doc.getLineNumber(start)
+        val endLine = doc.getLineNumber(max(start, end - 1))
+        val lineSpan = endLine - startLine + 1
+        if (lineSpan > MAX_HIGHLIGHT_LINES) return false
+
+        // Whole-file-ish rejection
+        if (docLen > 0) {
+            val frac = charLen.toDouble() / docLen.toDouble()
+            if (frac >= WHOLE_FILE_FRACTION_REJECT) return false
+        }
+
+        return true
+    }
+
+    /**
+     * Always return a valid range (start < end).
+     * If invalid, we force a 1-character range at the caret.
+     */
+    private fun ensureValidRange(editor: Editor, start: Int, end: Int): Pair<Int, Int> {
+        val len = editor.document.textLength
+        val a = start.coerceIn(0, len)
+        val b = end.coerceIn(0, len)
+        if (a < b) return a to b
+
+        val caret = editor.caretModel.offset.coerceIn(0, len)
+        val s = if (caret == len) max(len - 1, 0) else caret
+        val e = min(s + 1, len)
+        return s to e
+    }
+
+    /**
+     * Token = letters/digits/underscore, found by scanning left/right from caret.
      */
     private fun findNearestTokenRangeOnLine(
         text: CharSequence,
@@ -137,52 +271,40 @@ object CodeStrafeHighlightManager {
         lineStart: Int,
         lineEnd: Int
     ): Pair<Int, Int>? {
-        fun isTokenChar(ch: Char): Boolean = ch.isLetterOrDigit() || ch == '_'
 
+        fun isTokenChar(ch: Char): Boolean = ch.isLetterOrDigit() || ch == '_'
         if (text.isEmpty()) return null
         if (lineStart >= lineEnd) return null
 
-        // Clamp caret into [lineStart, lineEnd]
         val c = caret.coerceIn(lineStart, lineEnd)
-
-        // Search outward from the caret for the nearest token char
         var radius = 0
+
         while (true) {
             val left = c - radius
             val right = c + radius
 
-            var hitPos: Int? = null
+            var hit: Int? = null
+            if (left in lineStart until lineEnd && isTokenChar(text[left])) hit = left
+            if (hit == null && right in lineStart until lineEnd && isTokenChar(text[right])) hit = right
 
-            if (left in lineStart until lineEnd) {
-                val ch = text[left]
-                if (isTokenChar(ch)) hitPos = left
-            }
-            if (hitPos == null && right in lineStart until lineEnd) {
-                val ch = text[right]
-                if (isTokenChar(ch)) hitPos = right
-            }
-
-            if (hitPos != null) {
-                // Expand to full token
-                var a = hitPos
-                var b = hitPos + 1
-
+            if (hit != null) {
+                var a = hit
+                var b = hit + 1
                 while (a > lineStart && isTokenChar(text[a - 1])) a--
                 while (b < lineEnd && isTokenChar(text[b])) b++
-
-                if (a != b) return a to b
-                return null
+                return if (a < b) a to b else null
             }
 
             radius++
-
-            // Stop once we’ve covered the full line distance
             if (c - radius < lineStart && c + radius >= lineEnd) break
         }
 
         return null
     }
 
+    /**
+     * Fallback: nearest non-whitespace run on the line.
+     */
     private fun findNearestNonWhitespaceRunOnLine(
         text: CharSequence,
         caret: Int,
@@ -192,19 +314,16 @@ object CodeStrafeHighlightManager {
         if (text.isEmpty()) return null
         if (lineStart >= lineEnd) return null
 
-        fun isWs(i: Int): Boolean = text[i].isWhitespace()
-
         val c = caret.coerceIn(lineStart, lineEnd)
-
-        // Find nearest non-whitespace position by scanning outward
         var radius = 0
         var pos: Int? = null
+
         while (true) {
             val left = c - radius
             val right = c + radius
 
-            if (left in lineStart until lineEnd && !isWs(left)) { pos = left; break }
-            if (right in lineStart until lineEnd && !isWs(right)) { pos = right; break }
+            if (left in lineStart until lineEnd && !text[left].isWhitespace()) { pos = left; break }
+            if (right in lineStart until lineEnd && !text[right].isWhitespace()) { pos = right; break }
 
             radius++
             if (c - radius < lineStart && c + radius >= lineEnd) break
@@ -214,13 +333,15 @@ object CodeStrafeHighlightManager {
 
         var a = p
         var b = p + 1
-
         while (a > lineStart && !text[a - 1].isWhitespace()) a--
         while (b < lineEnd && !text[b].isWhitespace()) b++
 
-        return if (a != b) a to b else null
+        return if (a < b) a to b else null
     }
 
+    /**
+     * Simple bracket/quote scan. Not PSI.
+     */
     private fun findBracketRange(text: CharSequence, offset: Int): Pair<Int, Int>? {
         val pairs = mapOf(
             '(' to ')',
@@ -230,15 +351,14 @@ object CodeStrafeHighlightManager {
             '\'' to '\''
         )
 
-        fun inBounds(i: Int) = i in 0 until text.length
-        if (text.isEmpty() || !inBounds(offset.coerceAtMost(max(0, text.length - 1)))) return null
+        if (text.isEmpty()) return null
 
         for ((open, close) in pairs) {
             var left = offset
             var right = offset
 
             var depth = 0
-            while (left >= 0 && left < text.length) {
+            while (left in text.indices) {
                 val ch = text[left]
                 if (ch == open) {
                     if (depth == 0) break
@@ -248,7 +368,7 @@ object CodeStrafeHighlightManager {
             }
 
             depth = 0
-            while (right >= 0 && right < text.length) {
+            while (right in text.indices) {
                 val ch = text[right]
                 if (ch == close) {
                     if (depth == 0) break
@@ -257,7 +377,7 @@ object CodeStrafeHighlightManager {
                 right++
             }
 
-            if (left >= 0 && right < text.length && left < right) {
+            if (left in text.indices && right in text.indices && left < right) {
                 return left to (right + 1)
             }
         }
@@ -271,5 +391,11 @@ object CodeStrafeHighlightManager {
         } catch (t: Throwable) {
             log.warn("Failed to dispose highlighter cleanly", t)
         }
+    }
+
+    private enum class HighlightStyle {
+        TARGET,
+        PSI_TARGET,
+        FALLBACK
     }
 }

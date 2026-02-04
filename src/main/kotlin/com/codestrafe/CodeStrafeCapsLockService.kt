@@ -16,6 +16,15 @@ class CodeStrafeCapsLockService {
         installCapsLockListener()
     }
 
+    /**
+     * installCapsLockListener runs part of CodeStrafe behavior.
+     *
+     * - listens to raw key press and key release events.
+     * - registers a global key event dispatcher.
+     * - reads or updates CodeStrafe's global mode state.
+     *
+     * 
+     */
     private fun installCapsLockListener() {
         val manager = KeyboardFocusManager.getCurrentKeyboardFocusManager()
 

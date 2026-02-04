@@ -16,6 +16,11 @@ object CodeStrafeIdeActions {
 
     private val log = Logger.getInstance(CodeStrafeIdeActions::class.java)
 
+    /**
+     * invokeFirstAvailable runs part of CodeStrafe behavior.
+     *
+     * Parameters: List<String>, DataContext.
+     */
     fun invokeFirstAvailable(actionIds: List<String>, dataContext: DataContext) {
         val am = ActionManager.getInstance()
         val action: AnAction? = actionIds.firstNotNullOfOrNull { id -> am.getAction(id) }
@@ -33,6 +38,11 @@ object CodeStrafeIdeActions {
         }
     }
 
+    /**
+     * gotoNextError runs part of CodeStrafe behavior.
+     *
+     * Parameters: DataContext.
+     */
     fun gotoNextError(dataContext: DataContext) {
         invokeFirstAvailable(
             listOf(
@@ -44,6 +54,11 @@ object CodeStrafeIdeActions {
         )
     }
 
+    /**
+     * gotoPreviousError runs part of CodeStrafe behavior.
+     *
+     * Parameters: DataContext.
+     */
     fun gotoPreviousError(dataContext: DataContext) {
         invokeFirstAvailable(
             listOf(
@@ -55,6 +70,11 @@ object CodeStrafeIdeActions {
         )
     }
 
+    /**
+     * gotoNextTodo runs part of CodeStrafe behavior.
+     *
+     * Parameters: DataContext.
+     */
     fun gotoNextTodo(dataContext: DataContext) {
         invokeFirstAvailable(
             listOf(
@@ -66,6 +86,11 @@ object CodeStrafeIdeActions {
         )
     }
 
+    /**
+     * gotoPreviousTodo runs part of CodeStrafe behavior.
+     *
+     * Parameters: DataContext.
+     */
     fun gotoPreviousTodo(dataContext: DataContext) {
         invokeFirstAvailable(
             listOf(

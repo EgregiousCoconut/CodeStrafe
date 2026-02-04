@@ -18,6 +18,13 @@ import kotlin.math.min
  */
 class CodeStrafeMoveAction : AnAction() {
 
+    /**
+     * actionPerformed runs part of CodeStrafe behavior.
+     *
+     * - reads or updates CodeStrafe's global mode state.
+     *
+     * Parameters: AnActionEvent.
+     */
     override fun actionPerformed(e: AnActionEvent) {
         // Only active while Navigation Mode is enabled
         if (!CodeStrafeState.isNavigationModeEnabled()) return
@@ -38,6 +45,15 @@ class CodeStrafeMoveAction : AnAction() {
         CodeStrafeState.snapshotCaretPosition(editor)
     }
 
+    /**
+     * moveLines runs part of CodeStrafe behavior.
+     *
+     * - reads or moves the caret position.
+     * - moves the caret by line and column.
+     * - scrolls the view so the caret stays visible.
+     *
+     * Parameters: Editor, Int.
+     */
     private fun moveLines(editor: Editor, delta: Int) {
         val caret = editor.caretModel.currentCaret
         val doc = editor.document
@@ -47,6 +63,15 @@ class CodeStrafeMoveAction : AnAction() {
         editor.scrollingModel.scrollToCaret(com.intellij.openapi.editor.ScrollType.RELATIVE)
     }
 
+    /**
+     * moveWord runs part of CodeStrafe behavior.
+     *
+     * - reads or moves the caret position.
+     * - moves the caret to a specific character position.
+     * - scrolls the view so the caret stays visible.
+     *
+     * Parameters: Editor, Int.
+     */
     private fun moveWord(editor: Editor, direction: Int) {
         val caret = editor.caretModel.currentCaret
         val doc = editor.document
@@ -68,12 +93,24 @@ class CodeStrafeMoveAction : AnAction() {
         editor.scrollingModel.scrollToCaret(com.intellij.openapi.editor.ScrollType.RELATIVE)
     }
 
+    /**
+     * panLines runs part of CodeStrafe behavior.
+     *
+     * Parameters: Editor, Int.
+     */
     private fun panLines(editor: Editor, deltaLines: Int) {
         val lineHeight = editor.lineHeight
         val current = editor.scrollingModel.verticalScrollOffset
         editor.scrollingModel.scrollVertically(current + deltaLines * lineHeight)
     }
 
+    /**
+     * centerCaret runs part of CodeStrafe behavior.
+     *
+     * - scrolls the view so the caret stays visible.
+     *
+     * Parameters: Editor.
+     */
     private fun centerCaret(editor: Editor) {
         editor.scrollingModel.scrollToCaret(com.intellij.openapi.editor.ScrollType.CENTER)
     }

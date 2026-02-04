@@ -14,6 +14,14 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.max
 import kotlin.math.min
 
+/**
+ * CodeStrafeHoldMovementService is a class used by the CodeStrafe plugin.
+ *
+ * - listens to raw key press and key release events.
+ * - registers a global key event dispatcher.
+ * - uses a timer loop to run code repeatedly.
+ * - schedules repeated updates using a timer.
+ */
 class CodeStrafeHoldMovementService {
 
     private val log = Logger.getInstance(CodeStrafeHoldMovementService::class.java)
@@ -29,6 +37,15 @@ class CodeStrafeHoldMovementService {
         log.info("CodeStrafeHoldMovementService started")
     }
 
+    /**
+     * installDispatcher runs part of CodeStrafe behavior.
+     *
+     * - listens to raw key press and key release events.
+     * - registers a global key event dispatcher.
+     * - reads or updates CodeStrafe's global mode state.
+     *
+     * 
+     */
     private fun installDispatcher() {
         KeyboardFocusManager.getCurrentKeyboardFocusManager().addKeyEventDispatcher(
             KeyEventDispatcher { e ->
@@ -60,6 +77,13 @@ class CodeStrafeHoldMovementService {
         )
     }
 
+    /**
+     * scheduleRepeat runs part of CodeStrafe behavior.
+     *
+     * - schedules repeated updates using a timer.
+     *
+     * Parameters: Editor, Int, Action, Int.
+     */
     private fun scheduleRepeat(editor: Editor, keyCode: Int, action: Action, speed: Int) {
         alarm.addRequest({
             if (!activeKeys.containsKey(keyCode)) return@addRequest
@@ -68,6 +92,13 @@ class CodeStrafeHoldMovementService {
         }, initialDelayMs)
     }
 
+    /**
+     * scheduleFastRepeat runs part of CodeStrafe behavior.
+     *
+     * - schedules repeated updates using a timer.
+     *
+     * Parameters: Editor, Int, Action, Int.
+     */
     private fun scheduleFastRepeat(editor: Editor, keyCode: Int, action: Action, speed: Int) {
         alarm.addRequest({
             if (!activeKeys.containsKey(keyCode)) return@addRequest
@@ -76,6 +107,14 @@ class CodeStrafeHoldMovementService {
         }, repeatIntervalMs)
     }
 
+    /**
+     * perform runs part of CodeStrafe behavior.
+     *
+     * - requests a highlight refresh so the target box stays correct.
+     * - reads or updates CodeStrafe's global mode state.
+     *
+     * Parameters: Editor, Action, Int.
+     */
     private fun perform(editor: Editor, action: Action, speed: Int) {
         val app = ApplicationManager.getApplication()
         if (!app.isDispatchThread) {
@@ -94,6 +133,11 @@ class CodeStrafeHoldMovementService {
         CodeStrafeHighlightManager.updateForEditor(editor)
     }
 
+    /**
+     * mapKeyCode runs part of CodeStrafe behavior.
+     *
+     * Parameters: Int.
+     */
     private fun mapKeyCode(keyCode: Int): Action? {
         return when (keyCode) {
             KeyEvent.VK_W -> Action.UP
@@ -104,6 +148,14 @@ class CodeStrafeHoldMovementService {
         }
     }
 
+    /**
+     * getActiveEditor runs part of CodeStrafe behavior.
+     *
+     * - listens to raw key press and key release events.
+     * - looks at all open editor windows.
+     *
+     * 
+     */
     private fun getActiveEditor(): Editor? {
         val focusOwner = KeyboardFocusManager.getCurrentKeyboardFocusManager().focusOwner ?: return null
         return EditorFactory.getInstance().allEditors.firstOrNull { ed ->
@@ -111,6 +163,15 @@ class CodeStrafeHoldMovementService {
         }
     }
 
+    /**
+     * moveLines runs part of CodeStrafe behavior.
+     *
+     * - reads or moves the caret position.
+     * - moves the caret by line and column.
+     * - scrolls the view so the caret stays visible.
+     *
+     * Parameters: Editor, Int.
+     */
     private fun moveLines(editor: Editor, delta: Int) {
         val caret = editor.caretModel.currentCaret
         val doc = editor.document
@@ -120,10 +181,24 @@ class CodeStrafeHoldMovementService {
         editor.scrollingModel.scrollToCaret(ScrollType.RELATIVE)
     }
 
+    /**
+     * moveWord runs part of CodeStrafe behavior.
+     *
+     * Parameters: Editor, Int, Int.
+     */
     private fun moveWord(editor: Editor, direction: Int, steps: Int) {
         repeat(max(1, steps)) { moveOneWord(editor, direction) }
     }
 
+    /**
+     * moveOneWord runs part of CodeStrafe behavior.
+     *
+     * - reads or moves the caret position.
+     * - moves the caret to a specific character position.
+     * - scrolls the view so the caret stays visible.
+     *
+     * Parameters: Editor, Int.
+     */
     private fun moveOneWord(editor: Editor, direction: Int) {
         val caret = editor.caretModel.currentCaret
         val doc = editor.document

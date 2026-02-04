@@ -29,6 +29,14 @@ class CodeStrafeHighlightService {
     init {
         val editorFactory = EditorFactory.getInstance()
 
+        /**
+         * schedule runs part of CodeStrafe behavior.
+         *
+         * - schedules repeated updates using a timer.
+         * - requests a highlight refresh so the target box stays correct.
+         *
+         * Parameters: Editor.
+         */
         fun schedule(editor: Editor) {
             if (editor.isDisposed) return
             pending[editor] = true
@@ -49,22 +57,44 @@ class CodeStrafeHighlightService {
         }
 
         editorFactory.eventMulticaster.addSelectionListener(object : SelectionListener {
+            /**
+             * selectionChanged runs part of CodeStrafe behavior.
+             *
+             * Parameters: SelectionEvent.
+             */
             override fun selectionChanged(e: SelectionEvent) {
                 schedule(e.editor)
             }
         }, disposable)
 
         editorFactory.eventMulticaster.addCaretListener(object : CaretListener {
+            /**
+             * caretPositionChanged runs part of CodeStrafe behavior.
+             *
+             * Parameters: CaretEvent.
+             */
             override fun caretPositionChanged(event: CaretEvent) {
                 schedule(event.editor)
             }
         }, disposable)
 
         editorFactory.addEditorFactoryListener(object : EditorFactoryListener {
+            /**
+             * editorCreated runs part of CodeStrafe behavior.
+             *
+             * Parameters: EditorFactoryEvent.
+             */
             override fun editorCreated(event: EditorFactoryEvent) {
                 schedule(event.editor)
             }
 
+            /**
+             * editorReleased runs part of CodeStrafe behavior.
+             *
+             * - requests a highlight refresh so the target box stays correct.
+             *
+             * Parameters: EditorFactoryEvent.
+             */
             override fun editorReleased(event: EditorFactoryEvent) {
                 CodeStrafeHighlightManager.removeForEditor(event.editor)
                 pending.remove(event.editor)

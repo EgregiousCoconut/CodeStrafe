@@ -15,6 +15,15 @@ object CodeStrafeCapsLockHook {
 
     private var installed = false
 
+    /**
+     * install runs part of CodeStrafe behavior.
+     *
+     * - listens to raw key press and key release events.
+     * - registers a global key event dispatcher.
+     * - reads or updates CodeStrafe's global mode state.
+     *
+     * 
+     */
     fun install() {
         if (installed) return
         installed = true

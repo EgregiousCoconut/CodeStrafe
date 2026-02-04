@@ -10,6 +10,16 @@ import com.intellij.openapi.ui.Messages
  */
 class DebugCodeStrafeStateAction : AnAction("CodeStrafe: Debug State") {
 
+    /**
+     * actionPerformed runs part of CodeStrafe behavior.
+     *
+     * - looks at all open editor windows.
+     * - checks or uses the current text selection.
+     * - reads or moves the caret position.
+     * - reads or updates CodeStrafe's global mode state.
+     *
+     * Parameters: AnActionEvent.
+     */
     override fun actionPerformed(e: AnActionEvent) {
         val editors = EditorFactory.getInstance().allEditors
         val activeEditors = editors.size

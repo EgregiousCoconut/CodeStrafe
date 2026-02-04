@@ -20,17 +20,30 @@ object CodeStrafeHighlightPoller {
     private val running = AtomicBoolean(false)
     private val alarm = Alarm(Alarm.ThreadToUse.SWING_THREAD)
 
+    /**
+     * Snapshot is a class used by the CodeStrafe plugin.
+     */
     private data class Snapshot(val caret: Int, val selStart: Int, val selEnd: Int)
 
     // Keep last-known editor state so we only update when something changes
     private val last = ConcurrentHashMap<Editor, Snapshot>()
 
+    /**
+     * start runs part of CodeStrafe behavior.
+     *
+     * 
+     */
     fun start() {
         if (running.getAndSet(true)) return
         log.info("CodeStrafeHighlightPoller started")
         tick()
     }
 
+    /**
+     * stop runs part of CodeStrafe behavior.
+     *
+     * 
+     */
     fun stop() {
         running.set(false)
         alarm.cancelAllRequests()
@@ -38,6 +51,16 @@ object CodeStrafeHighlightPoller {
         log.info("CodeStrafeHighlightPoller stopped")
     }
 
+    /**
+     * tick runs part of CodeStrafe behavior.
+     *
+     * - looks at all open editor windows.
+     * - schedules repeated updates using a timer.
+     * - checks or uses the current text selection.
+     * - reads or moves the caret position.
+     *
+     * 
+     */
     private fun tick() {
         if (!running.get()) return
 

@@ -11,11 +11,25 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.max
 import kotlin.math.min
 
+/**
+ * CodeStrafeInputHook is a object used by the CodeStrafe plugin.
+ *
+ * - installs a typed-character handler so CodeStrafe can intercept letters.
+ * - requests a highlight refresh so the target box stays correct.
+ * - reads or updates CodeStrafe's global mode state.
+ */
 object CodeStrafeInputHook {
 
     private val log = Logger.getInstance(CodeStrafeInputHook::class.java)
     private val installed = AtomicBoolean(false)
 
+    /**
+     * ensureInstalled runs part of CodeStrafe behavior.
+     *
+     * - installs a typed-character handler so CodeStrafe can intercept letters.
+     *
+     * 
+     */
     fun ensureInstalled() {
         runOnEdt {
             if (installed.get()) return@runOnEdt
@@ -30,6 +44,14 @@ object CodeStrafeInputHook {
         if (app.isDispatchThread) block() else app.invokeAndWait { block() }
     }
 
+    /**
+     * CodeStrafeTypedHandler is a class used by the CodeStrafe plugin.
+     *
+     * - reads or moves the caret position.
+     * - moves the caret by line and column.
+     * - scrolls the view so the caret stays visible.
+     * - requests a highlight refresh so the target box stays correct.
+     */
     private class CodeStrafeTypedHandler : TypedActionHandler {
 
         override fun execute(
@@ -71,10 +93,24 @@ object CodeStrafeInputHook {
             typeNormally(editor, charTyped)
         }
 
+        /**
+         * typeNormally runs part of CodeStrafe behavior.
+         *
+         * Parameters: Editor, Char.
+         */
         private fun typeNormally(editor: Editor, charTyped: Char) {
             EditorModificationUtil.insertStringAtCaret(editor, charTyped.toString(), true, true)
         }
 
+        /**
+         * moveLines runs part of CodeStrafe behavior.
+         *
+         * - reads or moves the caret position.
+         * - moves the caret by line and column.
+         * - scrolls the view so the caret stays visible.
+         *
+         * Parameters: Editor, Int.
+         */
         private fun moveLines(editor: Editor, deltaLines: Int) {
             val caret = editor.caretModel.currentCaret
             val doc = editor.document
@@ -84,12 +120,26 @@ object CodeStrafeInputHook {
             editor.scrollingModel.scrollToCaret(ScrollType.RELATIVE)
         }
 
+        /**
+         * moveWord runs part of CodeStrafe behavior.
+         *
+         * Parameters: Editor, Int, Int.
+         */
         private fun moveWord(editor: Editor, direction: Int, steps: Int) {
             repeat(max(1, steps)) {
                 moveOneWord(editor, direction)
             }
         }
 
+        /**
+         * moveOneWord runs part of CodeStrafe behavior.
+         *
+         * - reads or moves the caret position.
+         * - moves the caret to a specific character position.
+         * - scrolls the view so the caret stays visible.
+         *
+         * Parameters: Editor, Int.
+         */
         private fun moveOneWord(editor: Editor, direction: Int) {
             val caret = editor.caretModel.currentCaret
             val doc = editor.document
