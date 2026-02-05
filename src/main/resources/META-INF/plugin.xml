@@ -4,17 +4,21 @@
     <vendor>Samuel George</vendor>
 
     <description>
-        CodeStrafe: Game-inspired, accessibility-focused navigation system for programming.
+        Game-inspired navigation system for accessible programming.
     </description>
 
     <depends>com.intellij.modules.platform</depends>
 
     <extensions defaultExtensionNs="com.intellij">
+        <!-- Runs after a project opens -->
         <startupActivity implementation="com.codestrafe.CodeStrafeStartupActivity"/>
-
-        <applicationService serviceImplementation="com.codestrafe.CodeStrafeCapsLockService"/>
-        <applicationService serviceImplementation="com.codestrafe.CodeStrafeHoldMovementService"/>
     </extensions>
+
+    <!-- Runs at IDE frame creation (Welcome screen included) -->
+    <applicationListeners>
+        <listener class="com.codestrafe.CodeStrafeAppLifecycleListener"
+                  topic="com.intellij.ide.AppLifecycleListener"/>
+    </applicationListeners>
 
     <actions>
         <action id="CodeStrafe.ToggleMode"
@@ -22,7 +26,6 @@
                 text="Toggle CodeStrafe Navigation Mode"
                 description="Toggle CodeStrafe Navigation Mode">
             <add-to-group group-id="ToolsMenu" anchor="last"/>
-            <keyboard-shortcut keymap="$default" first-keystroke="F8"/>
         </action>
 
         <action id="CodeStrafe.DebugState"
