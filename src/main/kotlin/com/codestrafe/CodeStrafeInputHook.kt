@@ -19,37 +19,45 @@ import kotlin.math.min
 /**
  * CodeStrafeInputHook
  *
- * Installs:
- * 1) AWT KeyEventDispatcher (PRIMARY) so W/A/S/D movement works even when Shift is held.
- *    This prevents uppercase letters from being typed in Navigation Mode.
+ * PRIMARY: AWT KeyEventDispatcher handles WASD movement (and blocks typing).
+ * SECONDARY: TypedActionHandler only handles "normal typing" and any actions that require DataContext (like N/P).
  *
- * 2) TypedActionHandler (FALLBACK) to keep normal typing stable and to catch cases where
- *    KeyEventDispatcher doesn't fire for some reason.
+ * Key rule:
+ * - WASD movement must NOT be implemented in both places, or you'll get double movement.
  *
- * IMPORTANT:
- * - The dispatcher only handles W/A/S/D. Actions that require DataContext (like next error)
- *   are kept in the TypedActionHandler where DataContext is available.
+ * macOS note:
+ * - When Caps Lock is ON, AWT may report isShiftDown=true for letter keys.
+ * - We track physical Shift state ourselves via VK_SHIFT press/release.
  */
 object CodeStrafeInputHook {
 
     private val log = Logger.getInstance(CodeStrafeInputHook::class.java)
     private val installed = AtomicBoolean(false)
 
+    // Physical Shift state (not affected by Caps Lock)
+    private val shiftPhysicallyDown = AtomicBoolean(false)
+
     @Volatile private var lastMoveMs: Long = 0
     private const val MOVE_DEBOUNCE_MS = 10L
 
     private val dispatcher: KeyEventDispatcher = KeyEventDispatcher { e: KeyEvent ->
         try {
-            // Only intercept in navigation mode
-            if (!CodeStrafeState.isNavigationModeEnabled()) return@KeyEventDispatcher false
+            // Track physical Shift state always
+            if (e.keyCode == KeyEvent.VK_SHIFT) {
+                when (e.id) {
+                    KeyEvent.KEY_PRESSED -> shiftPhysicallyDown.set(true)
+                    KeyEvent.KEY_RELEASED -> shiftPhysicallyDown.set(false)
+                }
+                return@KeyEventDispatcher false
+            }
 
-            // Only handle key presses
+            // Only intercept movement in navigation mode
+            if (!CodeStrafeState.isNavigationModeEnabled()) return@KeyEventDispatcher false
             if (e.id != KeyEvent.KEY_PRESSED) return@KeyEventDispatcher false
 
-            // Only handle when an editor has focus (avoid hijacking menus, dialogs, etc.)
             val editor = findFocusedEditor() ?: return@KeyEventDispatcher false
 
-            // Debounce for a smoother feel on key repeat
+            // Debounce for smoother repeat
             val now = System.currentTimeMillis()
             if (now - lastMoveMs < MOVE_DEBOUNCE_MS) {
                 if (isMovementKey(e.keyCode)) return@KeyEventDispatcher true
@@ -57,13 +65,13 @@ object CodeStrafeInputHook {
             }
             lastMoveMs = now
 
-            val shift = e.isShiftDown
+            val fast = shiftPhysicallyDown.get()
 
             val handled = when (e.keyCode) {
-                KeyEvent.VK_W -> { moveLines(editor, if (shift) -5 else -1); true }
-                KeyEvent.VK_S -> { moveLines(editor, if (shift) +5 else +1); true }
-                KeyEvent.VK_A -> { moveWord(editor, direction = -1, steps = if (shift) 5 else 1); true }
-                KeyEvent.VK_D -> { moveWord(editor, direction = +1, steps = if (shift) 5 else 1); true }
+                KeyEvent.VK_W -> { moveLines(editor, if (fast) -5 else -1); true }
+                KeyEvent.VK_S -> { moveLines(editor, if (fast) +5 else +1); true }
+                KeyEvent.VK_A -> { moveWord(editor, direction = -1, steps = if (fast) 5 else 1); true }
+                KeyEvent.VK_D -> { moveWord(editor, direction = +1, steps = if (fast) 5 else 1); true }
                 else -> false
             }
 
@@ -72,7 +80,7 @@ object CodeStrafeInputHook {
                 CodeStrafeState.snapshotCaretPosition(editor)
                 CodeStrafeHighlightManager.updateForEditor(editor)
 
-                // Consume event so it never types the letter
+                // Consume so it does not type and does not trigger typed-handler movement
                 return@KeyEventDispatcher true
             }
 
@@ -84,7 +92,7 @@ object CodeStrafeInputHook {
     }
 
     /**
-     * Installs both dispatcher + typed handler once.
+     * Installs the dispatcher + typed handler once.
      */
     fun ensureInstalled() {
         runOnEdt {
@@ -107,21 +115,11 @@ object CodeStrafeInputHook {
         return code == KeyEvent.VK_W || code == KeyEvent.VK_A || code == KeyEvent.VK_S || code == KeyEvent.VK_D
     }
 
-    /**
-     * Attempts to find the editor that currently has focus.
-     *
-     * We try:
-     * 1) CodeStrafeState.getCurrentEditor() if it's focused
-     * 2) Any open editor whose component has focus
-     */
     private fun findFocusedEditor(): Editor? {
         val current = CodeStrafeState.getCurrentEditor()
-        if (current is EditorEx && current.contentComponent.isFocusOwner) {
-            return current
-        }
+        if (current is EditorEx && current.contentComponent.isFocusOwner) return current
 
-        val all = EditorFactory.getInstance().allEditors
-        for (ed in all) {
+        for (ed in EditorFactory.getInstance().allEditors) {
             val ex = ed as? EditorEx ?: continue
             if (ex.contentComponent.isFocusOwner) return ed
         }
@@ -129,12 +127,10 @@ object CodeStrafeInputHook {
     }
 
     /**
-     * Fallback typed handler.
-     *
-     * In navigation mode:
-     * - Blocks W/A/S/D typing (fallback).
-     * - Keeps N/P for next/prev error here because DataContext is available.
-     * - Allows other keys to type (your current design).
+     * Typed fallback:
+     * - Does NOT handle WASD movement (to prevent double movement).
+     * - Keeps DataContext-required commands (N/P) here if you want them.
+     * - Optionally allows typing in nav mode for all other keys.
      */
     private class CodeStrafeTypedHandler : TypedActionHandler {
 
@@ -148,16 +144,20 @@ object CodeStrafeInputHook {
                 return
             }
 
-            val handled = when (charTyped) {
-                'w', 'W' -> { moveLines(editor, if (charTyped == 'W') -5 else -1); true }
-                's', 'S' -> { moveLines(editor, if (charTyped == 'S') +5 else +1); true }
-                'a', 'A' -> { moveWord(editor, direction = -1, steps = if (charTyped == 'A') 5 else 1); true }
-                'd', 'D' -> { moveWord(editor, direction = +1, steps = if (charTyped == 'D') 5 else 1); true }
+            // Prevent WASD from doing anything here (movement is handled in dispatcher).
+            if (charTyped == 'w' || charTyped == 'W' ||
+                charTyped == 'a' || charTyped == 'A' ||
+                charTyped == 's' || charTyped == 'S' ||
+                charTyped == 'd' || charTyped == 'D'
+            ) {
+                // Do nothing: dispatcher already moved and consumed the keypress.
+                return
+            }
 
+            val handled = when (charTyped) {
                 // DataContext-required actions stay here
                 'n', 'N' -> { CodeStrafeIdeActions.gotoNextError(dataContext); true }
                 'p', 'P' -> { CodeStrafeIdeActions.gotoPreviousError(dataContext); true }
-
                 else -> false
             }
 
@@ -168,6 +168,7 @@ object CodeStrafeInputHook {
                 return
             }
 
+            // Your current design: allow typing other keys in nav mode
             typeNormally(editor, charTyped)
         }
 
@@ -176,9 +177,6 @@ object CodeStrafeInputHook {
         }
     }
 
-    /**
-     * Movement helpers
-     */
     private fun moveLines(editor: Editor, deltaLines: Int) {
         val caret = editor.caretModel.currentCaret
         val doc = editor.document
