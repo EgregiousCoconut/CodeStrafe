@@ -30,7 +30,7 @@ object CodeStrafeHighlightManager {
      * Normal target highlight (outline + light background).
      */
     private val targetBg = JBColor(
-        Color(120, 200, 255, 45),
+        Color(120, 8200, 255, 45),
         Color(120, 200, 255, 25)
     )
     private val targetOutline = JBColor(
