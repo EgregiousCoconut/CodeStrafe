@@ -9,8 +9,11 @@ class CodeStrafeStartupActivity : StartupActivity {
     private val log = Logger.getInstance(CodeStrafeStartupActivity::class.java)
 
     override fun runActivity(project: Project) {
-        log.warn("CODESTRAFE_BOOT: StartupActivity.runActivity(project=${project.name}) -> installing Caps dispatcher")
-        System.err.println("CODESTRAFE_BOOT: StartupActivity for ${project.name} -> installIfNeeded()")
-        CodeStrafeCapsLockService.installIfNeeded()
+        log.warn("CODESTRAFE_STARTUP: runActivity(project=${project.name})")
+
+        CodeStrafeState.setCurrentProject(project)
+        CodeStrafeControllerService.start()
+
+        log.warn("CODESTRAFE_STARTUP: current project set and controller service started")
     }
 }

@@ -1,77 +1,102 @@
 package com.codestrafe
 
 import com.intellij.openapi.editor.Editor
-import com.intellij.openapi.editor.LogicalPosition
+import com.intellij.openapi.project.Project
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicReference
 
-/**
- * CodeStrafeState
- *
- * Minimal global state holder for CodeStrafe V1.
- *
- * Responsibilities:
- * - Track whether Navigation Mode is enabled
- * - Track the "current" editor (best-effort, updated by controller/hooks)
- * - Track last caret position (for simple backtracking, future work)
- *
- * Notes:
- * - This is intentionally lightweight and thread-safe.
- * - Editor references should be updated by your controller when focus changes.
- */
 object CodeStrafeState {
 
     private val navigationModeEnabled = AtomicBoolean(false)
-    private val currentEditorRef = AtomicReference<Editor?>(null)
-    private val lastCaretLogicalPosRef = AtomicReference<LogicalPosition?>(null)
 
-    /** Returns true if CodeStrafe Navigation Mode is enabled. */
-    fun isNavigationModeEnabled(): Boolean = navigationModeEnabled.get()
+    @Volatile
+    private var currentEditor: Editor? = null
 
-    /** Enables/disables Navigation Mode explicitly. */
-    fun setNavigationModeEnabled(enabled: Boolean) {
-        navigationModeEnabled.set(enabled)
+    @Volatile
+    private var currentProject: Project? = null
+
+    @Volatile
+    private var lastCaretOffset: Int = 0
+
+    @Volatile
+    private var lastCaretLine: Int = 0
+
+    @Volatile
+    private var lastCaretColumn: Int = 0
+
+    fun isNavigationModeEnabled(): Boolean {
+        return navigationModeEnabled.get()
     }
 
-    /** Toggles Navigation Mode and returns the new state. */
+    fun setNavigationModeEnabled(enabled: Boolean) {
+        navigationModeEnabled.set(enabled)
+        System.err.println("CODESTRAFE_STATE: navigationModeEnabled=$enabled")
+    }
+
     fun toggleNavigationMode(): Boolean {
         val newValue = !navigationModeEnabled.get()
-        navigationModeEnabled.set(newValue)
+        setNavigationModeEnabled(newValue)
         return newValue
     }
 
-    /**
-     * Returns the most recently known editor (may be null).
-     * The controller should keep this updated as editor focus changes.
-     */
-    fun getCurrentEditor(): Editor? = currentEditorRef.get()
-
-    /**
-     * Updates editor context.
-     * Call this whenever an editor gains focus or when handling an event tied to a specific editor.
-     */
-    fun updateEditorContext(editor: Editor?) {
-        currentEditorRef.set(editor)
+    fun enableNavigationMode() {
+        setNavigationModeEnabled(true)
     }
 
-    /** Returns the last stored caret logical position (may be null). */
-    fun getLastCaretLogicalPosition(): LogicalPosition? = lastCaretLogicalPosRef.get()
-
-    /**
-     * Stores the last caret logical position.
-     * Typically called before applying a navigation move so you can "return" later.
-     */
-    fun setLastCaretLogicalPosition(pos: LogicalPosition?) {
-        lastCaretLogicalPosRef.set(pos)
+    fun disableNavigationMode() {
+        setNavigationModeEnabled(false)
     }
 
-    /**
-     * Convenience: snapshot current caret position from an Editor (best-effort).
-     * Safe to call frequently; you may want to throttle updates elsewhere.
-     */
+    fun getCurrentEditor(): Editor? {
+        return currentEditor
+    }
+
+    fun setCurrentEditor(editor: Editor?) {
+        currentEditor = editor
+    }
+
+    fun getCurrentProject(): Project? {
+        return currentProject
+    }
+
+    fun setCurrentProject(project: Project?) {
+        currentProject = project
+    }
+
+    fun clearEditorIfMatches(editor: Editor?) {
+        if (currentEditor == editor) {
+            currentEditor = null
+        }
+    }
+
     fun snapshotCaretPosition(editor: Editor?) {
         if (editor == null) return
+
         val caret = editor.caretModel.currentCaret
-        lastCaretLogicalPosRef.set(caret.logicalPosition)
+        lastCaretOffset = caret.offset
+        lastCaretLine = caret.logicalPosition.line
+        lastCaretColumn = caret.logicalPosition.column
+    }
+
+    fun getLastCaretOffset(): Int {
+        return lastCaretOffset
+    }
+
+    fun getLastCaretLine(): Int {
+        return lastCaretLine
+    }
+
+    fun getLastCaretColumn(): Int {
+        return lastCaretColumn
+    }
+
+    fun reset() {
+        navigationModeEnabled.set(false)
+        currentEditor = null
+        currentProject = null
+        lastCaretOffset = 0
+        lastCaretLine = 0
+        lastCaretColumn = 0
+
+        System.err.println("CODESTRAFE_STATE: reset()")
     }
 }

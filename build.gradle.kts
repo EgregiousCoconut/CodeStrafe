@@ -33,6 +33,7 @@ repositories {
 dependencies {
     // --- Your library dependencies (packaged into the plugin) ---
     implementation("com.github.kwhat:jnativehook:2.2.2")
+    implementation("com.badlogicgames.jamepad:jamepad:2.30.0.0")
 
     // --- Tests ---
     testImplementation(libs.junit)

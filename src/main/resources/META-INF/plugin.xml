@@ -32,7 +32,11 @@
                 class="com.codestrafe.DebugCodeStrafeStateAction"
                 text="CodeStrafe: Debug State"
                 description="Show CodeStrafe internal state">
-            <add-to-group group-id="ToolsMenu" anchor="last"/>
         </action>
+        <action
+                id="CodeStrafe.DebugController"
+                class="com.codestrafe.DebugCodeStrafeControllerAction"
+                text="Debug CodeStrafe Controller"
+                description="Show controller detection info for CodeStrafe"/>
     </actions>
 </idea-plugin>

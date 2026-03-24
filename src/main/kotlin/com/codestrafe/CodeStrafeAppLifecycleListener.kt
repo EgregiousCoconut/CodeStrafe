@@ -11,11 +11,12 @@ class CodeStrafeAppLifecycleListener : AppLifecycleListener {
         log.warn("CODESTRAFE_BOOT: appFrameCreated -> installing Caps + Input hooks")
         System.err.println("CODESTRAFE_BOOT: appFrameCreated -> installIfNeeded() + ensureInstalled()")
 
-        // 1) Caps Lock toggles CodeStrafeState.navigationModeEnabled
         CodeStrafeCapsLockService.installIfNeeded()
-
-        // 2) Input hook reads CodeStrafeState and intercepts WASD
         CodeStrafeInputHook.ensureInstalled()
+
+        // Start controller support here because this listener is definitely running.
+        CodeStrafeControllerService.start()
+        log.warn("CODESTRAFE_CONTROLLER: start() called from AppLifecycleListener")
     }
 
     override fun appWillBeClosed(isRestart: Boolean) {
@@ -23,6 +24,6 @@ class CodeStrafeAppLifecycleListener : AppLifecycleListener {
         System.err.println("CODESTRAFE_BOOT: appWillBeClosed -> uninstallIfNeeded()")
 
         CodeStrafeCapsLockService.uninstallIfNeeded()
-        // Note: CodeStrafeInputHook doesn't need uninstall for now (it installs once per IDE run).
+        CodeStrafeControllerService.stop()
     }
 }
