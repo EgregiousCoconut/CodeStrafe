@@ -1,42 +1,39 @@
 <idea-plugin>
     <id>com.codestrafe</id>
     <name>CodeStrafe</name>
-    <vendor>Samuel George</vendor>
+    <vendor>CodeStrafe</vendor>
 
-    <description>
-        Game-inspired navigation system for accessible programming.
-    </description>
+    <description><![CDATA[
+        CodeStrafe is a JetBrains IDE plugin for one-handed, keyboard-only code navigation.
+    ]]></description>
 
     <depends>com.intellij.modules.platform</depends>
 
     <extensions defaultExtensionNs="com.intellij">
-        <!-- Runs after a project opens -->
-        <startupActivity implementation="com.codestrafe.CodeStrafeStartupActivity"/>
+        <postStartupActivity implementation="com.codestrafe.CodeStrafeStartupActivity"/>
+
+        <notificationGroup
+                id="CodeStrafe Notifications"
+                displayType="BALLOON"/>
     </extensions>
 
-    <!-- Runs at IDE frame creation (Welcome screen included) -->
-    <applicationListeners>
-        <listener class="com.codestrafe.CodeStrafeAppLifecycleListener"
-                  topic="com.intellij.ide.AppLifecycleListener"/>
-    </applicationListeners>
-
     <actions>
-        <action id="CodeStrafe.ToggleMode"
-                class="com.codestrafe.ToggleCodeStrafeModeAction"
-                text="Toggle CodeStrafe Navigation Mode"
-                description="Toggle CodeStrafe Navigation Mode">
-            <add-to-group group-id="ToolsMenu" anchor="last"/>
-        </action>
-
-        <action id="CodeStrafe.DebugState"
-                class="com.codestrafe.DebugCodeStrafeStateAction"
-                text="CodeStrafe: Debug State"
-                description="Show CodeStrafe internal state">
-        </action>
         <action
-                id="CodeStrafe.DebugController"
-                class="com.codestrafe.DebugCodeStrafeControllerAction"
-                text="Debug CodeStrafe Controller"
-                description="Show controller detection info for CodeStrafe"/>
+                id="CodeStrafe.ToggleMode"
+                class="com.codestrafe.ToggleCodeStrafeModeAction"
+                text="Toggle CodeStrafe Mode"
+                description="Toggle CodeStrafe navigation mode"/>
+
+        <action
+                id="CodeStrafe.DebugState"
+                class="com.codestrafe.DebugCodeStrafeStateAction"
+                text="Debug CodeStrafe State"
+                description="Print CodeStrafe debug state"/>
+
+        <action
+                id="CodeStrafe.ToggleVoice"
+                class="com.codestrafe.ToggleCodeStrafeVoiceAction"
+                text="Toggle CodeStrafe Voice"
+                description="Start or stop Google Speech-to-Text and Llama voice command recognition"/>
     </actions>
 </idea-plugin>

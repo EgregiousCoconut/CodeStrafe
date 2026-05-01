@@ -2,18 +2,71 @@ package com.codestrafe
 
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.startup.StartupActivity
+import com.intellij.openapi.startup.ProjectActivity
 
-class CodeStrafeStartupActivity : StartupActivity {
+class CodeStrafeStartupActivity : ProjectActivity {
 
     private val log = Logger.getInstance(CodeStrafeStartupActivity::class.java)
 
-    override fun runActivity(project: Project) {
-        log.warn("CODESTRAFE_STARTUP: runActivity(project=${project.name})")
+    override suspend fun execute(project: Project) {
+        log.warn("CODESTRAFE_STARTUP: startup called for project ${project.name}")
 
-        CodeStrafeState.setCurrentProject(project)
-        CodeStrafeControllerService.start()
+        invokeOptionalNoArg("CodeStrafeInputHook.ensureInstalled") {
+            CodeStrafeInputHook::class.java
+                .getMethod("ensureInstalled")
+                .invoke(CodeStrafeInputHook)
+        }
 
-        log.warn("CODESTRAFE_STARTUP: current project set and controller service started")
+        invokeOptionalNoArg("CodeStrafeCapsLockService.ensureInstalled") {
+            CodeStrafeCapsLockService::class.java
+                .getMethod("ensureInstalled")
+                .invoke(CodeStrafeCapsLockService)
+        }
+
+        invokeOptionalNoArg("CodeStrafeHighlightHook.ensureInstalled") {
+            CodeStrafeHighlightHook::class.java
+                .getMethod("ensureInstalled")
+                .invoke(CodeStrafeHighlightHook)
+        }
+
+        invokeOptionalWithProject("CodeStrafeHighlightHook.ensureInstalled(project)", project) {
+            CodeStrafeHighlightHook::class.java
+                .getMethod("ensureInstalled", Project::class.java)
+                .invoke(CodeStrafeHighlightHook, project)
+        }
+
+        invokeOptionalNoArg("CodeStrafeHighlightPoller.ensureInstalled") {
+            CodeStrafeHighlightPoller::class.java
+                .getMethod("ensureInstalled")
+                .invoke(CodeStrafeHighlightPoller)
+        }
+
+        invokeOptionalWithProject("CodeStrafeHighlightPoller.ensureStarted(project)", project) {
+            CodeStrafeHighlightPoller::class.java
+                .getMethod("ensureStarted", Project::class.java)
+                .invoke(CodeStrafeHighlightPoller, project)
+        }
+    }
+
+    private fun invokeOptionalNoArg(name: String, block: () -> Unit) {
+        try {
+            block()
+            log.warn("CODESTRAFE_STARTUP: initialized $name")
+        } catch (t: NoSuchMethodException) {
+            log.warn("CODESTRAFE_STARTUP: skipped $name because method does not exist")
+        } catch (t: Throwable) {
+            log.warn("CODESTRAFE_STARTUP: failed while initializing $name", t)
+        }
+    }
+
+    private fun invokeOptionalWithProject(name: String, project: Project, block: (Project) -> Unit) {
+        try {
+            block(project)
+            log.warn("CODESTRAFE_STARTUP: initialized $name")
+        } catch (t: NoSuchMethodException) {
+            log.warn("CODESTRAFE_STARTUP: skipped $name because method does not exist")
+        } catch (t: Throwable) {
+            log.warn("CODESTRAFE_STARTUP: failed while initializing $name", t)
+        }
     }
 }

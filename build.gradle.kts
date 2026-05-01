@@ -1,45 +1,41 @@
+import org.gradle.process.CommandLineArgumentProvider
 import org.jetbrains.changelog.Changelog
 import org.jetbrains.changelog.markdownToHTML
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 
 plugins {
-    id("java") // Java support
-    alias(libs.plugins.kotlin) // Kotlin support
-    alias(libs.plugins.intelliJPlatform) // IntelliJ Platform Gradle Plugin
-    alias(libs.plugins.changelog) // Gradle Changelog Plugin
-    alias(libs.plugins.qodana) // Gradle Qodana Plugin
-    alias(libs.plugins.kover) // Gradle Kover Plugin
+    id("java")
+    alias(libs.plugins.kotlin)
+    alias(libs.plugins.intelliJPlatform)
+    alias(libs.plugins.changelog)
+    alias(libs.plugins.qodana)
+    alias(libs.plugins.kover)
 }
 
 group = providers.gradleProperty("pluginGroup").get()
 version = providers.gradleProperty("pluginVersion").get()
 
-// Set the JVM language level used to build the project.
 kotlin {
     jvmToolchain(21)
 }
 
-// Configure project's dependencies
 repositories {
     mavenCentral()
 
-    // IntelliJ Platform Gradle Plugin Repositories Extension
     intellijPlatform {
         defaultRepositories()
     }
 }
 
-// Dependencies are managed with Gradle version catalog
 dependencies {
-    // --- Your library dependencies (packaged into the plugin) ---
     implementation("com.github.kwhat:jnativehook:2.2.2")
     implementation("com.badlogicgames.jamepad:jamepad:2.30.0.0")
 
-    // --- Tests ---
+    implementation("com.google.cloud:google-cloud-speech:4.83.0")
+
     testImplementation(libs.junit)
     testImplementation(libs.opentest4j)
 
-    // IntelliJ Platform Gradle Plugin Dependencies Extension
     intellijPlatform {
         intellijIdea(providers.gradleProperty("platformVersion"))
 
@@ -51,13 +47,11 @@ dependencies {
     }
 }
 
-// Configure IntelliJ Platform Gradle Plugin
 intellijPlatform {
     pluginConfiguration {
         name = providers.gradleProperty("pluginName")
         version = providers.gradleProperty("pluginVersion")
 
-        // Extract the <!-- Plugin description --> section from README.md
         description = providers.fileContents(layout.projectDirectory.file("README.md")).asText.map {
             val start = "<!-- Plugin description -->"
             val end = "<!-- Plugin description end -->"
@@ -107,13 +101,11 @@ intellijPlatform {
     }
 }
 
-// Configure Gradle Changelog Plugin
 changelog {
     groups.empty()
     repositoryUrl = providers.gradleProperty("pluginRepositoryUrl")
 }
 
-// Configure Gradle Kover Plugin
 kover {
     reports {
         total {
